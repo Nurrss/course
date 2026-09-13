@@ -7,8 +7,40 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  scroll-behavior: smooth;
 }
 
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+::selection {
+  @apply bg-indigo-200 text-indigo-950;
+}
+
+/* Тонкий скроллбар для горизонтально прокручиваемых таблиц/панелей */
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: theme(colors.slate.300) transparent;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.18s ease-out;
 }

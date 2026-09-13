@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Plus, MapPin, Power, PowerOff, LayoutGrid } from '@lucide/vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseBadge from '@/components/ui/BaseBadge.vue'
+import LoadingState from '@/components/ui/LoadingState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { supabase } from '@/lib/supabaseClient'
 
 interface ClubRow {
@@ -28,6 +33,7 @@ const newClubName = ref('')
 const newClubLocation = ref('')
 const newClubTeacherId = ref('')
 const creating = ref(false)
+const createError = ref<string | null>(null)
 
 async function loadClubs() {
   const { data, error: err } = await supabase
@@ -50,7 +56,7 @@ async function loadTeachers() {
     .sort((a: TeacherOption, b: TeacherOption) => a.full_name.localeCompare(b.full_name))
 }
 
-onMounted(async () => {
+async function load() {
   loading.value = true
   error.value = null
   try {
@@ -60,12 +66,14 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
 
 async function onCreate() {
   if (!newClubName.value.trim() || !newClubTeacherId.value) return
   creating.value = true
-  error.value = null
+  createError.value = null
   try {
     const { error: err } = await supabase.from('clubs').insert({
       name: newClubName.value.trim(),
@@ -78,7 +86,7 @@ async function onCreate() {
     newClubTeacherId.value = ''
     await loadClubs()
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Не удалось создать кружок'
+    createError.value = e instanceof Error ? e.message : 'Не удалось создать кружок'
   } finally {
     creating.value = false
   }
@@ -111,47 +119,56 @@ async function onToggleActive(club: ClubRow) {
     <h1 class="text-lg font-semibold text-slate-900">Кружки</h1>
 
     <BaseCard>
-      <p class="mb-2 text-sm font-medium text-slate-700">Создать кружок</p>
+      <p class="mb-3 text-sm font-medium text-slate-700">Создать кружок</p>
       <form class="grid gap-3 sm:grid-cols-3" @submit.prevent="onCreate">
         <BaseInput v-model="newClubName" label="Название" placeholder="Например, Гитара" />
-        <BaseInput v-model="newClubLocation" label="Место" placeholder="Каб. 12" />
+        <BaseInput v-model="newClubLocation" label="Место" placeholder="Каб. 12" :icon="MapPin" />
         <label class="block">
-          <span class="mb-1 block text-sm font-medium text-slate-700">Учитель</span>
+          <span class="mb-1.5 block text-sm font-medium text-slate-700">Учитель</span>
           <select
             v-model="newClubTeacherId"
-            class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none transition-shadow focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
           >
             <option value="" disabled>Выберите учителя</option>
             <option v-for="t in teachers" :key="t.id" :value="t.id">{{ t.full_name }}</option>
           </select>
         </label>
-        <BaseButton type="submit" size="sm" class="sm:col-span-3 sm:w-fit" :disabled="creating">
-          {{ creating ? 'Создаём…' : 'Создать' }}
+        <p v-if="createError" class="text-sm text-rose-600 sm:col-span-3">{{ createError }}</p>
+        <BaseButton type="submit" size="sm" class="sm:col-span-3 sm:w-fit" :loading="creating" :icon="Plus">
+          Создать
         </BaseButton>
       </form>
     </BaseCard>
 
-    <p v-if="loading" class="text-sm text-slate-400">Загрузка…</p>
-    <p v-else-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <LoadingState v-if="loading" />
+    <ErrorState v-else-if="error" :message="error" @retry="load" />
+    <EmptyState v-else-if="clubs.length === 0" :icon="LayoutGrid" message="Кружков пока нет." />
 
     <BaseCard v-for="club in clubs" :key="club.id">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="font-medium text-slate-900">
+        <div class="min-w-0">
+          <p class="flex items-center gap-2 font-medium text-slate-900">
             {{ club.name }}
-            <span v-if="!club.is_active" class="ml-1 text-xs text-slate-400">(неактивен)</span>
+            <BaseBadge v-if="!club.is_active" tone="neutral" :active="false">неактивен</BaseBadge>
           </p>
-          <p v-if="club.location" class="text-sm text-slate-500">{{ club.location }}</p>
+          <p v-if="club.location" class="mt-0.5 flex items-center gap-1 text-sm text-slate-500">
+            <MapPin class="h-3.5 w-3.5" /> {{ club.location }}
+          </p>
         </div>
         <div class="flex items-center gap-2">
           <select
             :value="club.teacher_id"
-            class="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
             @change="onReassignTeacher(club, ($event.target as HTMLSelectElement).value)"
           >
             <option v-for="t in teachers" :key="t.id" :value="t.id">{{ t.full_name }}</option>
           </select>
-          <BaseButton size="sm" variant="ghost" @click="onToggleActive(club)">
+          <BaseButton
+            size="sm"
+            variant="ghost"
+            :icon="club.is_active ? PowerOff : Power"
+            @click="onToggleActive(club)"
+          >
             {{ club.is_active ? 'Отключить' : 'Включить' }}
           </BaseButton>
         </div>

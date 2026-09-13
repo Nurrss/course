@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabaseClient'
+import { useProfileStore } from '@/stores/profile'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -34,6 +35,7 @@ export const useAuthStore = defineStore('auth', {
       await supabase.auth.signOut()
       this.session = null
       this.user = null
+      useProfileStore().reset()
     },
   },
 })

@@ -1,13 +1,10 @@
 import { supabase } from '@/lib/supabaseClient'
 import { useAuthStore } from '@/stores/auth'
+import { todayIso } from '@/lib/date'
 import type { AttendanceRecord, AttendanceStatus, ClubMember, ClubSession, Student } from '@/types/domain'
 
 export interface ClubMemberWithStudent extends ClubMember {
   student: Student
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
 }
 
 export function useAttendance() {

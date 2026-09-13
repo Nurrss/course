@@ -6,13 +6,20 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/login',
+      name: 'root',
+      component: () => import('@/pages/RootPage.vue'),
     },
     {
       path: '/login',
       name: 'login',
       component: () => import('@/pages/LoginPage.vue'),
       meta: { public: true, title: 'Вход' },
+    },
+    {
+      path: '/no-access',
+      name: 'no-access',
+      component: () => import('@/pages/NoAccessPage.vue'),
+      meta: { title: 'Нет доступа' },
     },
     {
       path: '/teacher',

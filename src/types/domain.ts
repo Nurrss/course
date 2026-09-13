@@ -77,6 +77,13 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   admin: 'Администратор',
 }
 
+/** Домашний экран для каждой роли — единый источник для роутера и переключателя ролей. */
+export const ROLE_HOME: Record<AppRole, string> = {
+  admin: '/admin/overview',
+  teacher: '/teacher/clubs',
+  curator: '/curator/class',
+}
+
 export const ATTENDANCE_LABELS: Record<AttendanceStatus, string> = {
   present: 'Пришёл',
   absent: 'Не пришёл',

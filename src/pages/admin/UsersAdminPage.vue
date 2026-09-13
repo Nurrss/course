@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Info, Users } from '@lucide/vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import LoadingState from '@/components/ui/LoadingState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { supabase } from '@/lib/supabaseClient'
 import type { AppRole } from '@/types/domain'
 import { ROLE_LABELS } from '@/types/domain'
@@ -18,6 +22,16 @@ const users = ref<UserRow[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const busyKey = ref<string | null>(null)
+
+function initialsOf(fullName: string): string {
+  return fullName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+}
 
 async function loadUsers() {
   const [{ data: profiles, error: profilesErr }, { data: roles, error: rolesErr }] = await Promise.all([
@@ -40,7 +54,7 @@ async function loadUsers() {
   }))
 }
 
-onMounted(async () => {
+async function load() {
   loading.value = true
   error.value = null
   try {
@@ -50,7 +64,9 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
 
 async function onToggleRole(user: UserRow, role: AppRole) {
   const key = `${user.id}:${role}`
@@ -83,27 +99,38 @@ async function onToggleRole(user: UserRow, role: AppRole) {
   <div class="space-y-4">
     <h1 class="text-lg font-semibold text-slate-900">Пользователи</h1>
 
-    <BaseCard class="bg-indigo-50 text-sm text-indigo-900">
-      Новые аккаунты создаются через приглашение в Supabase (Auth → Invite user), так как это
-      требует service role ключа, который не должен попадать в браузер. Здесь можно назначать роли
-      уже существующим пользователям.
-    </BaseCard>
+    <div class="flex items-start gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+      <Info class="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        Новые аккаунты создаются через приглашение в Supabase (Auth → Invite user), так как это
+        требует service role ключа, который не должен попадать в браузер. Здесь можно назначать роли
+        уже существующим пользователям.
+      </span>
+    </div>
 
-    <p v-if="loading" class="text-sm text-slate-400">Загрузка…</p>
-    <p v-else-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <LoadingState v-if="loading" />
+    <ErrorState v-else-if="error" :message="error" @retry="load" />
+    <EmptyState v-else-if="users.length === 0" :icon="Users" message="Пользователей пока нет." />
 
     <BaseCard v-for="user in users" :key="user.id">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="font-medium text-slate-900">{{ user.full_name }}</p>
-          <p v-if="user.phone" class="text-sm text-slate-500">{{ user.phone }}</p>
+        <div class="flex min-w-0 items-center gap-3">
+          <div
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600"
+          >
+            {{ initialsOf(user.full_name) }}
+          </div>
+          <div class="min-w-0">
+            <p class="truncate font-medium text-slate-900">{{ user.full_name }}</p>
+            <p v-if="user.phone" class="text-sm text-slate-500">{{ user.phone }}</p>
+          </div>
         </div>
         <div class="flex gap-1.5">
           <button
             v-for="role in ALL_ROLES"
             :key="role"
             type="button"
-            class="rounded-full px-2.5 py-1 text-xs font-medium transition disabled:opacity-50"
+            class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
             :class="
               user.roles.includes(role)
                 ? 'bg-indigo-600 text-white'

@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Plus, Users, GraduationCap } from '@lucide/vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import LoadingState from '@/components/ui/LoadingState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { supabase } from '@/lib/supabaseClient'
 
 interface ClassRowUi {
@@ -27,6 +31,7 @@ const error = ref<string | null>(null)
 const newClassName = ref('')
 const newClassCuratorId = ref('')
 const creating = ref(false)
+const createError = ref<string | null>(null)
 
 async function loadClasses() {
   const { data, error: err } = await supabase
@@ -56,7 +61,7 @@ async function loadCurators() {
     .sort((a: CuratorOption, b: CuratorOption) => a.full_name.localeCompare(b.full_name))
 }
 
-onMounted(async () => {
+async function load() {
   loading.value = true
   error.value = null
   try {
@@ -66,12 +71,14 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
 
 async function onCreate() {
   if (!newClassName.value.trim()) return
   creating.value = true
-  error.value = null
+  createError.value = null
   try {
     const { error: err } = await supabase.from('classes').insert({
       name: newClassName.value.trim(),
@@ -82,7 +89,7 @@ async function onCreate() {
     newClassCuratorId.value = ''
     await loadClasses()
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Не удалось создать класс'
+    createError.value = e instanceof Error ? e.message : 'Не удалось создать класс'
   } finally {
     creating.value = false
   }
@@ -106,37 +113,41 @@ async function onReassignCurator(klass: ClassRowUi, curatorId: string) {
     <h1 class="text-lg font-semibold text-slate-900">Классы</h1>
 
     <BaseCard>
-      <p class="mb-2 text-sm font-medium text-slate-700">Создать класс</p>
+      <p class="mb-3 text-sm font-medium text-slate-700">Создать класс</p>
       <form class="grid gap-3 sm:grid-cols-3" @submit.prevent="onCreate">
         <BaseInput v-model="newClassName" label="Название" placeholder="Например, 9А" />
         <label class="block">
-          <span class="mb-1 block text-sm font-medium text-slate-700">Куратор (необязательно)</span>
+          <span class="mb-1.5 block text-sm font-medium text-slate-700">Куратор (необязательно)</span>
           <select
             v-model="newClassCuratorId"
-            class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none transition-shadow focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
           >
             <option value="">Не назначен</option>
             <option v-for="c in curators" :key="c.id" :value="c.id">{{ c.full_name }}</option>
           </select>
         </label>
-        <BaseButton type="submit" size="sm" class="sm:col-span-3 sm:w-fit" :disabled="creating">
-          {{ creating ? 'Создаём…' : 'Создать' }}
+        <p v-if="createError" class="text-sm text-rose-600 sm:col-span-3">{{ createError }}</p>
+        <BaseButton type="submit" size="sm" class="sm:col-span-3 sm:w-fit" :loading="creating" :icon="Plus">
+          Создать
         </BaseButton>
       </form>
     </BaseCard>
 
-    <p v-if="loading" class="text-sm text-slate-400">Загрузка…</p>
-    <p v-else-if="error" class="text-sm text-rose-600">{{ error }}</p>
+    <LoadingState v-if="loading" />
+    <ErrorState v-else-if="error" :message="error" @retry="load" />
+    <EmptyState v-else-if="classes.length === 0" :icon="GraduationCap" message="Классов пока нет." />
 
     <BaseCard v-for="klass in classes" :key="klass.id">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="font-medium text-slate-900">{{ klass.name }}</p>
-          <p class="text-sm text-slate-500">{{ klass.student_count }} учеников · {{ klass.school_year }} уч. год</p>
+          <p class="mt-0.5 flex items-center gap-1 text-sm text-slate-500">
+            <Users class="h-3.5 w-3.5" /> {{ klass.student_count }} учеников · {{ klass.school_year }} уч. год
+          </p>
         </div>
         <select
           :value="klass.curator_id ?? ''"
-          class="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
           @change="onReassignCurator(klass, ($event.target as HTMLSelectElement).value)"
         >
           <option value="">Не назначен</option>
