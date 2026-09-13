@@ -13,6 +13,11 @@ import {
   EyeOff,
   CircleCheck,
   CircleX,
+  Pencil,
+  X,
+  Save,
+  KeyRound,
+  Mail,
 } from '@lucide/vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
@@ -135,25 +140,126 @@ async function onToggleRole(user: UserRow, role: AppRole) {
 }
 
 // ---------------------------------------------------------------------------
-// Создание пользователей (вручную и импортом) — через Edge Function, которая
-// одна имеет доступ к service role ключу.
+// Создание и администрирование пользователей — через Edge Function, которая
+// одна имеет доступ к service role ключу (создание аккаунта, чужой email,
+// сброс пароля обычным ключом сделать нельзя).
 // ---------------------------------------------------------------------------
 
-async function createUsers(payload: NewUserPayload[]): Promise<CreateResultRow[]> {
-  const { data, error: err } = await supabase.functions.invoke<{
-    results?: CreateResultRow[]
-    error?: string
-  }>('admin-create-users', { body: { users: payload } })
-
+async function invokeAdmin<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error: err } = await supabase.functions.invoke<T & { error?: string }>(
+    'admin-create-users',
+    { body },
+  )
   if (err) {
     throw new Error(
-      'Не удалось вызвать функцию создания пользователей. Убедитесь, что Edge Function ' +
+      'Не удалось вызвать серверную функцию. Убедитесь, что Edge Function ' +
         '"admin-create-users" задеплоена в вашем проекте Supabase. ' +
         (err.message ?? ''),
     )
   }
   if (data?.error) throw new Error(data.error)
-  return data?.results ?? []
+  return data as T
+}
+
+async function createUsers(payload: NewUserPayload[]): Promise<CreateResultRow[]> {
+  const data = await invokeAdmin<{ results?: CreateResultRow[] }>({ users: payload })
+  return data.results ?? []
+}
+
+// --- Просмотр / редактирование существующего пользователя ---
+
+const editingUserId = ref<string | null>(null)
+const editFullName = ref('')
+const editPhone = ref('')
+const editEmail = ref<string | null>(null)
+const editEmailLoading = ref(false)
+const editSaving = ref(false)
+const editError = ref<string | null>(null)
+const editSuccess = ref(false)
+
+const resetPassword = ref('')
+const resetShowPassword = ref(false)
+const resetSaving = ref(false)
+const resetError = ref<string | null>(null)
+const resetSuccess = ref(false)
+
+async function toggleEdit(user: UserRow) {
+  if (editingUserId.value === user.id) {
+    editingUserId.value = null
+    return
+  }
+  editingUserId.value = user.id
+  editFullName.value = user.full_name
+  editPhone.value = user.phone ?? ''
+  editEmail.value = null
+  editError.value = null
+  editSuccess.value = false
+  resetPassword.value = ''
+  resetShowPassword.value = false
+  resetError.value = null
+  resetSuccess.value = false
+
+  editEmailLoading.value = true
+  try {
+    const data = await invokeAdmin<{ email?: string }>({ action: 'get_user', user_id: user.id })
+    editEmail.value = data.email ?? '—'
+  } catch (e) {
+    editEmail.value = null
+    editError.value = e instanceof Error ? e.message : 'Не удалось получить email'
+  } finally {
+    editEmailLoading.value = false
+  }
+}
+
+async function onSaveProfile(user: UserRow) {
+  const fullName = editFullName.value.trim()
+  if (!fullName) {
+    editError.value = 'ФИО не может быть пустым'
+    return
+  }
+  editSaving.value = true
+  editError.value = null
+  editSuccess.value = false
+  try {
+    const { error: err } = await supabase
+      .from('profiles')
+      .update({ full_name: fullName, phone: editPhone.value.trim() || null })
+      .eq('id', user.id)
+    if (err) throw err
+    user.full_name = fullName
+    user.phone = editPhone.value.trim() || null
+    editSuccess.value = true
+    await loadUsers()
+  } catch (e) {
+    editError.value = e instanceof Error ? e.message : 'Не удалось сохранить изменения'
+  } finally {
+    editSaving.value = false
+  }
+}
+
+function fillResetPassword() {
+  resetPassword.value = generatePassword()
+  resetShowPassword.value = true
+}
+
+async function onResetPassword(user: UserRow) {
+  resetError.value = null
+  resetSuccess.value = false
+  if (resetPassword.value.trim().length < 6) {
+    resetError.value = 'Пароль должен быть не короче 6 символов'
+    return
+  }
+  resetSaving.value = true
+  try {
+    await invokeAdmin({ action: 'reset_password', user_id: user.id, password: resetPassword.value.trim() })
+    resetSuccess.value = true
+    resetPassword.value = ''
+    resetShowPassword.value = false
+  } catch (e) {
+    resetError.value = e instanceof Error ? e.message : 'Не удалось сбросить пароль'
+  } finally {
+    resetSaving.value = false
+  }
 }
 
 // --- Форма ручного создания ---
@@ -485,22 +591,87 @@ const importSuccessCount = computed(() => importResults.value.filter((r) => r.su
             <p v-if="user.phone" class="text-sm text-slate-500">{{ user.phone }}</p>
           </div>
         </div>
-        <div class="flex gap-1.5">
+        <div class="flex items-center gap-2">
+          <div class="flex gap-1.5">
+            <button
+              v-for="role in ALL_ROLES"
+              :key="role"
+              type="button"
+              class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
+              :class="
+                user.roles.includes(role)
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              "
+              :disabled="busyKey === `${user.id}:${role}`"
+              @click="onToggleRole(user, role)"
+            >
+              {{ ROLE_LABELS[role] }}
+            </button>
+          </div>
           <button
-            v-for="role in ALL_ROLES"
-            :key="role"
             type="button"
-            class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-            :class="
-              user.roles.includes(role)
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-            "
-            :disabled="busyKey === `${user.id}:${role}`"
-            @click="onToggleRole(user, role)"
+            class="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors"
+            :class="editingUserId === user.id ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'"
+            @click="toggleEdit(user)"
           >
-            {{ ROLE_LABELS[role] }}
+            <component :is="editingUserId === user.id ? X : Pencil" class="h-3.5 w-3.5" />
           </button>
+        </div>
+      </div>
+
+      <div v-if="editingUserId === user.id" class="mt-4 space-y-4 border-t border-slate-100 pt-4">
+        <div class="flex items-center gap-2 text-sm text-slate-500">
+          <Mail class="h-4 w-4 shrink-0" />
+          <span v-if="editEmailLoading">Загружаем email…</span>
+          <span v-else-if="editEmail">{{ editEmail }}</span>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <BaseInput v-model="editFullName" label="ФИО" />
+          <BaseInput v-model="editPhone" label="Телефон" placeholder="+7 700 000 0000" />
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <BaseButton size="sm" :loading="editSaving" :icon="Save" @click="onSaveProfile(user)">
+            Сохранить
+          </BaseButton>
+          <p v-if="editSuccess" class="text-sm text-emerald-600">Сохранено</p>
+          <p v-if="editError" class="text-sm text-rose-600">{{ editError }}</p>
+        </div>
+
+        <div class="border-t border-slate-100 pt-4">
+          <p class="mb-2 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            <KeyRound class="h-4 w-4" /> Сбросить пароль
+          </p>
+          <div class="flex flex-wrap items-end gap-2">
+            <BaseInput
+              v-model="resetPassword"
+              :type="resetShowPassword ? 'text' : 'password'"
+              placeholder="Новый пароль"
+              class="max-w-[220px]"
+            />
+            <button
+              type="button"
+              class="rounded-lg border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50"
+              title="Показать/скрыть пароль"
+              @click="resetShowPassword = !resetShowPassword"
+            >
+              <component :is="resetShowPassword ? EyeOff : Eye" class="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-200 p-2.5 text-slate-500 transition-colors hover:bg-slate-50"
+              title="Сгенерировать пароль"
+              @click="fillResetPassword"
+            >
+              <Dices class="h-4 w-4" />
+            </button>
+            <BaseButton size="sm" variant="secondary" :loading="resetSaving" @click="onResetPassword(user)">
+              Сбросить
+            </BaseButton>
+          </div>
+          <p v-if="resetSuccess" class="mt-2 text-sm text-emerald-600">Пароль обновлён</p>
+          <p v-if="resetError" class="mt-2 text-sm text-rose-600">{{ resetError }}</p>
         </div>
       </div>
     </BaseCard>

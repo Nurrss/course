@@ -11,4 +11,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    // UsersAdminPage lazy-loads xlsx (SheetJS) only for the admin import
+    // flow — it's fine for that one chunk to exceed the default warning size.
+    chunkSizeWarningLimit: 600,
+  },
 })

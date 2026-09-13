@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Filter, GraduationCap, ChevronRight } from '@lucide/vue'
+import { Filter, GraduationCap, ChevronRight, UserPlus } from '@lucide/vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseInput from '@/components/ui/BaseInput.vue'
 import LoadingState from '@/components/ui/LoadingState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -123,25 +125,77 @@ const filteredRows = computed(() => {
   if (!onlyAbsent.value) return rows.value
   return rows.value.filter((r) => r.clubs.some((c) => c.status === 'absent'))
 })
+
+// --- Добавление ученика в класс ---
+
+const showAddForm = ref(false)
+const newStudentName = ref('')
+const newStudentContact = ref('')
+const addingStudent = ref(false)
+const addError = ref<string | null>(null)
+
+async function onAddStudent() {
+  if (!klass.value || !newStudentName.value.trim()) return
+  addingStudent.value = true
+  addError.value = null
+  try {
+    const { error: err } = await supabase.from('students').insert({
+      class_id: klass.value.id,
+      full_name: newStudentName.value.trim(),
+      parent_contact: newStudentContact.value.trim() || null,
+    })
+    if (err) throw err
+    newStudentName.value = ''
+    newStudentContact.value = ''
+    showAddForm.value = false
+    await loadStatuses()
+  } catch (e) {
+    addError.value = e instanceof Error ? e.message : 'Не удалось добавить ученика'
+  } finally {
+    addingStudent.value = false
+  }
+}
 </script>
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-lg font-semibold text-slate-900">
         Мой класс<span v-if="klass" class="text-slate-400"> · {{ klass.name }}</span>
       </h1>
-      <button
-        type="button"
-        class="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-        :class="onlyAbsent ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'"
-        @click="onlyAbsent = !onlyAbsent"
-      >
-        <Filter class="h-3.5 w-3.5" />
-        <span class="hidden sm:inline">Только пропустившие</span>
-        <span class="sm:hidden">Пропустившие</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+          :class="onlyAbsent ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'"
+          @click="onlyAbsent = !onlyAbsent"
+        >
+          <Filter class="h-3.5 w-3.5" />
+          <span class="hidden sm:inline">Только пропустившие</span>
+          <span class="sm:hidden">Пропустившие</span>
+        </button>
+        <BaseButton
+          v-if="klass"
+          size="sm"
+          :icon="UserPlus"
+          @click="showAddForm = !showAddForm"
+        >
+          <span class="hidden sm:inline">Добавить ученика</span>
+          <span class="sm:hidden">Добавить</span>
+        </BaseButton>
+      </div>
     </div>
+
+    <BaseCard v-if="showAddForm" class="animate-fade-in">
+      <form class="grid gap-3 sm:grid-cols-2" @submit.prevent="onAddStudent">
+        <BaseInput v-model="newStudentName" label="ФИО ученика" placeholder="Например, Асель Байжанова" />
+        <BaseInput v-model="newStudentContact" label="Контакт родителя (необязательно)" placeholder="+7 700 000 0000" />
+        <p v-if="addError" class="text-sm text-rose-600 sm:col-span-2">{{ addError }}</p>
+        <BaseButton type="submit" size="sm" class="sm:col-span-2 sm:w-fit" :loading="addingStudent">
+          Добавить
+        </BaseButton>
+      </form>
+    </BaseCard>
 
     <LoadingState v-if="loading" />
     <ErrorState v-else-if="error" :message="error" @retry="load" />

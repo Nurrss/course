@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ArrowLeft, CalendarClock, Sparkles } from '@lucide/vue'
+import { ArrowLeft, CalendarClock, Sparkles, Pencil, X, Save } from '@lucide/vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseInput from '@/components/ui/BaseInput.vue'
 import LoadingState from '@/components/ui/LoadingState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -77,6 +79,44 @@ async function load() {
 }
 
 onMounted(load)
+
+// --- Редактирование данных ученика ---
+
+const editing = ref(false)
+const editName = ref('')
+const editContact = ref('')
+const editSaving = ref(false)
+const editError = ref<string | null>(null)
+
+function toggleEdit() {
+  if (!student.value) return
+  editing.value = !editing.value
+  if (editing.value) {
+    editName.value = student.value.full_name
+    editContact.value = student.value.parent_contact ?? ''
+    editError.value = null
+  }
+}
+
+async function onSaveStudent() {
+  if (!student.value || !editName.value.trim()) return
+  editSaving.value = true
+  editError.value = null
+  try {
+    const { error: err } = await supabase
+      .from('students')
+      .update({ full_name: editName.value.trim(), parent_contact: editContact.value.trim() || null })
+      .eq('id', student.value.id)
+    if (err) throw err
+    student.value.full_name = editName.value.trim()
+    student.value.parent_contact = editContact.value.trim() || null
+    editing.value = false
+  } catch (e) {
+    editError.value = e instanceof Error ? e.message : 'Не удалось сохранить изменения'
+  } finally {
+    editSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -92,7 +132,32 @@ onMounted(load)
     <ErrorState v-else-if="error" :message="error" @retry="load" />
 
     <template v-else-if="student">
-      <h1 class="text-lg font-semibold text-slate-900">{{ student.full_name }}</h1>
+      <div class="flex items-center justify-between gap-3">
+        <h1 class="text-lg font-semibold text-slate-900">{{ student.full_name }}</h1>
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors"
+          :class="editing ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'"
+          @click="toggleEdit"
+        >
+          <component :is="editing ? X : Pencil" class="h-3.5 w-3.5" />
+          {{ editing ? 'Отмена' : 'Изменить' }}
+        </button>
+      </div>
+
+      <BaseCard v-if="editing" class="animate-fade-in">
+        <div class="space-y-3">
+          <BaseInput v-model="editName" label="ФИО" />
+          <BaseInput v-model="editContact" label="Контакт родителя" placeholder="+7 700 000 0000" />
+          <p v-if="editError" class="text-sm text-rose-600">{{ editError }}</p>
+          <BaseButton size="sm" :loading="editSaving" :icon="Save" @click="onSaveStudent">
+            Сохранить
+          </BaseButton>
+        </div>
+      </BaseCard>
+      <p v-else-if="student.parent_contact" class="text-sm text-slate-500">
+        Контакт родителя: {{ student.parent_contact }}
+      </p>
 
       <section class="space-y-2">
         <h2 class="text-sm font-semibold text-slate-700">История посещаемости</h2>
